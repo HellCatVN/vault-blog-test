@@ -1,0 +1,210 @@
+<!DOCTYPE html><html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Thoughtful writing."><title>Password Hashing — Nocturne</title><script>
+      try {
+        document.documentElement.dataset.theme =
+          localStorage.getItem('nocturne-theme') || 'dark';
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    </script><link rel="stylesheet" href="/_astro/BaseLayout.CNgXS75G.css"></head><body><header class="site-header"><div class="shell header"><a class="brand" href="/">NOCTURNE</a><nav class="nav" aria-label="Main navigation"><a href="/">Home</a><a href="/articles">Articles</a><a href="/articles" aria-label="Browse categories">Categories<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"></path></svg></a><a href="/#about">About</a></nav><div class="actions"><button class="icon-btn" type="button" aria-label="Search"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.4-3.4"></path></svg></button><span class="vline" aria-hidden="true"></span><button class="icon-btn" type="button" data-theme-toggle aria-label="Switch to light theme"></button><span class="avatar" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"></circle><path d="M6.5 19c.8-3 2.6-4.5 5.5-4.5S16.7 16 17.5 19"></path></svg></span></div></div></header><div class="progress" aria-label="Reading progress"><div class="shell"><span>Reading Progress</span><span class="bar" aria-hidden="true"><span data-reading-progress-bar></span></span><span data-reading-progress-count>0%</span></div></div><main class="article"><article class="content"><nav class="crumb" aria-label="Breadcrumb"><a href="/">⌂ Home</a><span aria-hidden="true">›</span><a href="/articles">Articles</a></nav><h1 class="article-title">Password Hashing</h1><div class="article-topline"><div class="author"><span class="author-dot" aria-hidden="true"></span><span>Anonymous</span></div><div class="article-actions" aria-label="Article actions"><span class="action">▱ Save</span><span class="action">♡ Like</span><span class="action">⌯ Share</span></div></div><figure class="article-hero photo"><img src="/theme/article-hero.jpg" alt="Password Hashing" loading="eager" decoding="async"></figure><div class="prose"><h1 id="password-hashing">Password Hashing</h1>
+<blockquote>
+<p>Generic implementation reference for storing user passwords securely. <strong>Hash, never encrypt.</strong></p>
+</blockquote>
+<h2 id="hash-do-not-encrypt">Hash, do not encrypt</h2>
+<p>This is the single most important rule:</p>
+<ul>
+<li><strong>Hashing</strong> is one-way and irreversible. <strong>Encryption</strong> is reversible. Passwords must be <strong>irreversible</strong>.</li>
+<li>Store only a salted, slow, memory-hard <strong>hash</strong> of the password — never the plaintext, never an encrypted blob you could decrypt.</li>
+<li>Never use a fast cryptographic digest on its own (<code>MD5</code>, <code>SHA-1</code>, <code>SHA-256</code>, <code>SHA-512</code>). They are designed to be fast, which is the opposite of what password storage needs — GPUs can brute-force billions per second.</li>
+</ul>
+<p>The threat model: if the password database is stolen, the hashes should be expensive enough to crack that the attacker gains little, while legitimate logins still verify correctly.</p>
+<h2 id="core-concepts">Core concepts</h2>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Salt</strong></td>
+<td>A unique random value per password, mixed into the hash. Defeats rainbow tables and ensures two identical passwords produce different hashes. Store it alongside the hash (it is not secret).</td>
+</tr>
+<tr>
+<td><strong>Pepper</strong></td>
+<td>A server-side secret added via HMAC (or append) and <strong>not</strong> stored in the DB. Means a DB-only leak still cannot crack passwords. Harder to rotate — keep in a secrets manager / HSM.</td>
+</tr>
+<tr>
+<td><strong>Work factor / cost</strong></td>
+<td>How much CPU time the hash consumes. Tune upward as hardware speeds up.</td>
+</tr>
+<tr>
+<td><strong>Memory hardness</strong></td>
+<td>Requires significant RAM per hash, blunting GPU / ASIC / FPGA attacks.</td>
+</tr>
+<tr>
+<td><strong>Parameter encoding</strong></td>
+<td>Modern schemes store <code>algo + params + salt + hash</code> in one self-describing string, so old hashes remain verifiable after you raise the cost.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="algorithm-comparison">Algorithm comparison</h2>
+<table>
+<thead>
+<tr>
+<th>Algorithm</th>
+<th>Memory-hard</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Argon2id</strong> (PHC winner)</td>
+<td>Yes</td>
+<td>Current best default. Blends Argon2i (side-channel resistance) and Argon2d (GPU resistance). Use this if you can.</td>
+</tr>
+<tr>
+<td><strong>bcrypt</strong></td>
+<td>No (CPU-hard)</td>
+<td>Battle-tested, ubiquitous, easy. Capped at 72 input bytes. Solid fallback where Argon2id is unavailable.</td>
+</tr>
+<tr>
+<td><strong>scrypt</strong></td>
+<td>Yes</td>
+<td>Memory-hard, predates Argon2. Still good but less commonly used today.</td>
+</tr>
+<tr>
+<td><strong>PBKDF2</strong></td>
+<td>No</td>
+<td>Iteration-based; the weakest of these. Acceptable mainly for compliance/FIPS environments. Prefer HMAC-SHA256 or SHA512 variants.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Do not use:</strong> plaintext, <code>MD5</code>, <code>SHA-1</code>, <code>SHA-256/512</code> alone, <code>DES</code>/<code>crypt</code>, or any reversible encryption (e.g. AES) for passwords.</p>
+<h2 id="recommendations">Recommendations</h2>
+<ol>
+<li><strong>Primary: Argon2id.</strong></li>
+<li><strong>Fallback: bcrypt</strong> (if Argon2id is unavailable in your stack).</li>
+<li><strong>scrypt</strong> is fine where already in use; do not start new designs on PBKDF2 unless required by compliance.</li>
+<li>Always use a <strong>vetted library</strong> — never implement the algorithm yourself.</li>
+</ol>
+<h2 id="parameter-tuning">Parameter tuning</h2>
+<p>Calibrate so a single hash takes a target of roughly <strong>250–500 ms</strong> on production hardware (or as slow as your login UX allows). Benchmark on the target machine, then set the cost; revisit annually as hardware improves.</p>
+<p>OWASP baselines (verify current guidance and benchmark locally):</p>
+<table>
+<thead>
+<tr>
+<th>Algorithm</th>
+<th>Baseline parameters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Argon2id</td>
+<td><code>m = 19456 KiB</code> (~19 MiB), <code>t = 2</code>, <code>p = 1</code> (Argon2id v1.3+). Pre-v1.3: <code>m = 47104</code> (46 MiB), <code>t = 1</code>, <code>p = 1</code>.</td>
+</tr>
+<tr>
+<td>bcrypt</td>
+<td>work factor <code>11+</code> (tune; ≥10).</td>
+</tr>
+<tr>
+<td>scrypt</td>
+<td><code>N = 2^17</code>, <code>r = 8</code>, <code>p = 1</code>.</td>
+</tr>
+<tr>
+<td>PBKDF2</td>
+<td><code>PBKDF2-HMAC-SHA256</code>: 600,000 iterations (or <code>SHA512</code>: 210,000).</td>
+</tr>
+</tbody>
+</table>
+<h2 id="verify-flow">Verify flow</h2>
+<p>Verification does <strong>not</strong> decrypt anything. It re-runs the hash with the <strong>stored salt and parameters</strong>, then compares in constant time:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#F97583">flowchart</span><span style="color:#B392F0"> TD</span></span>
+<span class="line"><span style="color:#FFAB70">  L</span><span style="color:#F97583">[</span><span style="color:#9ECBFF">User submits password</span><span style="color:#F97583">]</span><span style="color:#F97583"> --&gt;</span><span style="color:#FFAB70"> G</span><span style="color:#F97583">[</span><span style="color:#9ECBFF">Fetch stored hash</span><span style="color:#F97583">]</span></span>
+<span class="line"><span style="color:#FFAB70">  G </span><span style="color:#F97583">--&gt;</span><span style="color:#FFAB70"> CK</span><span style="color:#F97583">{</span><span style="color:#9ECBFF">"Algorithm + params known?"</span><span style="color:#F97583">}</span></span>
+<span class="line"><span style="color:#FFAB70">  CK </span><span style="color:#F97583">--&gt;|</span><span style="color:#9ECBFF">no</span><span style="color:#F97583">|</span><span style="color:#FFAB70"> F</span><span style="color:#F97583">[</span><span style="color:#9ECBFF">"Reject"</span><span style="color:#F97583">]</span></span>
+<span class="line"><span style="color:#FFAB70">  CK </span><span style="color:#F97583">--&gt;|</span><span style="color:#9ECBFF">yes</span><span style="color:#F97583">|</span><span style="color:#FFAB70"> V</span><span style="color:#F97583">[</span><span style="color:#9ECBFF">"Re-hash input with stored salt + params"</span><span style="color:#F97583">]</span></span>
+<span class="line"><span style="color:#FFAB70">  V </span><span style="color:#F97583">--&gt;</span><span style="color:#FFAB70"> C</span><span style="color:#F97583">{</span><span style="color:#9ECBFF">"Constant-time equal?"</span><span style="color:#F97583">}</span></span>
+<span class="line"><span style="color:#FFAB70">  C </span><span style="color:#F97583">--&gt;|</span><span style="color:#9ECBFF">no</span><span style="color:#F97583">|</span><span style="color:#FFAB70"> F2</span><span style="color:#F97583">[</span><span style="color:#9ECBFF">"Reject (invalid credentials)"</span><span style="color:#F97583">]</span></span>
+<span class="line"><span style="color:#FFAB70">  C </span><span style="color:#F97583">--&gt;|</span><span style="color:#9ECBFF">yes</span><span style="color:#F97583">|</span><span style="color:#FFAB70"> U</span><span style="color:#F97583">{</span><span style="color:#9ECBFF">"Params below current policy?"</span><span style="color:#F97583">}</span></span>
+<span class="line"><span style="color:#FFAB70">  U </span><span style="color:#F97583">--&gt;|</span><span style="color:#9ECBFF">yes</span><span style="color:#F97583">|</span><span style="color:#FFAB70"> R</span><span style="color:#F97583">[</span><span style="color:#9ECBFF">"Re-hash with new params, persist"</span><span style="color:#F97583">]</span></span>
+<span class="line"><span style="color:#FFAB70">  U </span><span style="color:#F97583">--&gt;|</span><span style="color:#9ECBFF">no</span><span style="color:#F97583">|</span><span style="color:#FFAB70"> OK</span><span style="color:#F97583">[</span><span style="color:#9ECBFF">"Authenticated"</span><span style="color:#F97583">]</span></span>
+<span class="line"><span style="color:#FFAB70">  R </span><span style="color:#F97583">--&gt;</span><span style="color:#FFAB70"> OK</span></span></code></pre>
+<p>Because parameters are encoded inside the stored string, you can raise the cost later and still verify legacy hashes — then transparently upgrade them on the user’s next successful login (the <code>Params below current policy?</code> branch above).</p>
+<h2 id="operational-concerns">Operational concerns</h2>
+<ul>
+<li><strong>Transparent rehashing / upgrade-on-login:</strong> when a user logs in and their stored hash uses an older algorithm or lower cost, re-hash with current parameters and persist. Zero downtime, no forced resets.</li>
+<li><strong>Rate-limit / throttle login attempts</strong> per account and per IP; add progressive backoff. This is independent of hash strength but complements it.</li>
+<li><strong>Bound input length</strong> to prevent denial-of-service via huge passwords. A common pattern is to pre-hash with a fast HMAC keyed by the pepper (<code>HMAC-SHA256(pepper, password)</code>) before the slow hash — this also sidesteps bcrypt’s 72-byte limit.</li>
+<li><strong>Unicode:</strong> normalize and handle passwords as UTF-8 bytes consistently; never silently truncate.</li>
+<li><strong>Don’t over-restrict passwords</strong> (NIST 800-63B): allow long passwords (≥64 chars), do not require arbitrary character classes, and block only commonly-breached passwords via a denylist.</li>
+<li><strong>Secret management:</strong> store the pepper in a secrets manager / KMS / env injected at runtime — never in source control.</li>
+</ul>
+<h2 id="migration-between-algorithms">Migration between algorithms</h2>
+<p>Moving from (e.g.) bcrypt → Argon2id needs no flag day:</p>
+<ol>
+<li>Keep verifying against the legacy algorithm.</li>
+<li>On each successful login, if the stored hash is the old format, compute a new Argon2id hash and replace it.</li>
+<li>Optional: show an “upgraded” flag internally; report remaining legacy hashes for monitoring.</li>
+<li>After the rollout window, force-reset any accounts that never logged back in.</li>
+</ol>
+<h2 id="common-mistakes-anti-patterns">Common mistakes (anti-patterns)</h2>
+<ul>
+<li>Fast hashes (<code>SHA-256</code>, <code>MD5</code>) for passwords.</li>
+<li>A shared/global salt instead of a unique per-user salt.</li>
+<li>A pepper hardcoded in source or committed to the repo.</li>
+<li>Capping password length far too low, or requiring cosmetic complexity rules.</li>
+<li>Hand-rolled crypto instead of a vetted library.</li>
+<li>“Double hashing” naïvely (<code>md5(sha1(...))</code>) — adds no real security.</li>
+<li>Storing password hints or recoverable password questions that leak the password.</li>
+<li>Encrypting passwords because “we can decrypt for support” — never.</li>
+</ul>
+<h2 id="library-reference-examples">Library reference (examples)</h2>
+<table>
+<thead>
+<tr>
+<th>Language</th>
+<th>Argon2id</th>
+<th>bcrypt</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Node.js / TypeScript</td>
+<td><code>argon2</code></td>
+<td><code>bcrypt</code> / <code>bcryptjs</code></td>
+</tr>
+<tr>
+<td>Python</td>
+<td><code>argon2-cffi</code></td>
+<td><code>bcrypt</code></td>
+</tr>
+<tr>
+<td>Go</td>
+<td><code>golang.org/x/crypto/argon2</code></td>
+<td><code>golang.org/x/crypto/bcrypt</code></td>
+</tr>
+<tr>
+<td>Rust</td>
+<td><code>argon2</code> crate</td>
+<td><code>bcrypt</code> crate</td>
+</tr>
+<tr>
+<td>PHP</td>
+<td><code>password_hash(..., PASSWORD_ARGON2ID)</code></td>
+<td><code>password_hash(..., PASSWORD_BCRYPT)</code></td>
+</tr>
+</tbody>
+</table>
+<p>Prefer the built-in <code>password_hash</code> / framework helper where one exists — it handles salt generation and parameter encoding for you.</p>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul>
+<li>Default to <strong>Argon2id</strong>; fall back to <strong>bcrypt</strong>.</li>
+<li>Unique salt per password; optional pepper kept outside the DB.</li>
+<li>Calibrate cost to ~250–500 ms per hash; re-measure periodically.</li>
+<li>Encode algorithm + params + salt in the stored string so legacy hashes stay verifiable.</li>
+<li>Upgrade hashes transparently on successful login.</li>
+<li>Throttle login attempts; use vetted libraries; never encrypt or store plaintext.</li>
+</ul>
+<p>Once a password is verified, the session is established via the token flow in authentication.</p>
+</div></article></main><script src="/scripts/reading-progress.js" defer></script><footer id="about" class="footer"><div class="shell"><div class="footer-grid"><div class="footer-copy"><div class="brand">NOCTURNE</div><p>Thoughtful writing for a more intentional life.</p></div><nav class="footer-nav" aria-label="Footer navigation"><a href="/">Home</a><a href="/articles">Articles</a><a href="/articles">Categories</a><a href="/#about">About</a></nav><div class="social" aria-label="Social links"><a href="#" aria-label="X / Twitter">𝕏</a><a href="#" aria-label="GitHub">◎</a><a href="#" aria-label="RSS feed">◔</a></div></div><div class="copyright">© 2026 NOCTURNE. All rights reserved.</div></div></footer><script src="/scripts/theme-toggle.js" defer></script><script type="module" src="/_astro/BaseLayout.astro_astro_type_script_index_0_lang.hG5L7J30.js"></script></body></html>
